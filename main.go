@@ -1,15 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os/exec"
 	"strings"
-
-	"github.com/fsnotify/fsnotify"
 )
 
 type JsonItem struct {
@@ -22,11 +22,9 @@ type JsonItem struct {
 
 var jsonContent []JsonItem
 
-func update() {
-	// clear old data
+func getMetrics(w http.ResponseWriter, r *http.Request) {
 	jsonContent = nil
-
-	jsonRead, err := ioutil.ReadFile("./testssl.json")
+	jsonRead, err := ioutil.ReadFile("./out.json")
 	if err != nil {
 		log.Println("Error when opening file: ", err)
 	}
@@ -35,59 +33,36 @@ func update() {
 	if err != nil {
 		log.Println("Error during Unmarshal(): ", err)
 	}
+	lookupJson := make(map[string]JsonItem)
 	for _, i := range jsonContent {
-		fmt.Println(i.ID)
+		lookupJson[i.ID] = i
 	}
-
+	ipHost := strings.Split(lookupJson["final_score"].IP, "/")
+	final_score := fmt.Sprintf("final_score{ip=\"%s\",url=\"%s\"} %s\n", ipHost[0], ipHost[1], lookupJson["final_score"].Finding)
+	io.WriteString(w, final_score)
 }
 
-func getMetrics(w http.ResponseWriter, r *http.Request) {
-	for _, i := range jsonContent {
-		io.WriteString(w, i.ID)
+func processMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start the process in the background
+	cmd := exec.CommandContext(ctx, "./cron.sh")
+	err := cmd.Start()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
+	fmt.Printf("Process started with PID: %d\n", cmd.Process.Pid)
+
 }
 
 func main() {
-
+	fmt.Println("starting webservice")
 	http.HandleFunc("/metrics", getMetrics)
+	http.HandleFunc("/", processMetrics)
 	err := http.ListenAndServe(":9232", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Create new watcher.
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer watcher.Close()
-	// Start listening for events.
-	go func() {
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if strings.HasSuffix(event.Name, "cron.lock") {
-					return
-				}
-				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-					fmt.Printf("%s %s\n", event.Op, event.Name)
-					update()
-				}
-
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Println("error:", err)
-			}
-		}
-	}()
-	err = watcher.Add(".")
-	if err != nil {
-		log.Fatal(err)
-	}
-	<-make(chan struct{})
 }
