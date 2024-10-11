@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -33,13 +32,13 @@ func getMetrics(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Error during Unmarshal(): ", err)
 	}
-	lookupJson := make(map[string]JsonItem)
+	jsonLookup := make(map[string]JsonItem)
 	for _, i := range jsonContent {
-		lookupJson[i.ID] = i
+		jsonLookup[i.ID] = i
 	}
-	ipHost := strings.Split(lookupJson["final_score"].IP, "/")
-	final_score := fmt.Sprintf("final_score{ip=\"%s\",url=\"%s\"} %s\n", ipHost[0], ipHost[1], lookupJson["final_score"].Finding)
-	io.WriteString(w, final_score)
+
+	ipHost := strings.Split(jsonLookup["final_score"].IP, "/")
+	fmt.Fprintf(w, "final_score{ip=\"%s\",url=\"%s\"} %s\n", ipHost[1], ipHost[0], jsonLookup["final_score"].Finding)
 }
 
 func processMetrics(w http.ResponseWriter, r *http.Request) {
@@ -53,8 +52,7 @@ func processMetrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	fmt.Printf("Process started with PID: %d\n", cmd.Process.Pid)
-
+	log.Printf("Process started with PID: %d\n", cmd.Process.Pid)
 }
 
 func main() {
