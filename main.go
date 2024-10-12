@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -20,6 +21,7 @@ type JsonItem struct {
 }
 
 var jsonContent []JsonItem
+var idArray []string
 
 func getMetrics(w http.ResponseWriter, r *http.Request) {
 	jsonContent = nil
@@ -36,9 +38,10 @@ func getMetrics(w http.ResponseWriter, r *http.Request) {
 	for _, i := range jsonContent {
 		jsonLookup[i.ID] = i
 	}
-
-	ipHost := strings.Split(jsonLookup["final_score"].IP, "/")
-	fmt.Fprintf(w, "final_score{ip=\"%s\",url=\"%s\"} %s\n", ipHost[1], ipHost[0], jsonLookup["final_score"].Finding)
+	for _, i := range idArray {
+		ipHost := strings.Split(jsonLookup[string(i)].IP, "/")
+		fmt.Fprintf(w, "final_score{ip=\"%s\",url=\"%s\"} %s\n", ipHost[1], ipHost[0], jsonLookup[string(i)].Finding)
+	}
 }
 
 func processMetrics(w http.ResponseWriter, r *http.Request) {
@@ -56,10 +59,16 @@ func processMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println("starting webservice")
+	//  set CLI args
+	address := flag.String("address", ":9232", "port or address to listen to, default to: :9232")
+	id := flag.String("id", "final_score", "list of space seperated ID to expose, default to: final_score")
+	flag.Parse()
+	idArray = strings.Split(*id, " ")
+	// start webserver
+	log.Printf("starting webservice on %s, parsing %s", *address, strings.Split(*id, " "))
 	http.HandleFunc("/metrics", getMetrics)
 	http.HandleFunc("/", processMetrics)
-	err := http.ListenAndServe(":9232", nil)
+	err := http.ListenAndServe(*address, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
